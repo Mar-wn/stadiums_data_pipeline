@@ -15,6 +15,7 @@ def extract_data_from_wiki_page(URL):
     table_rows = table[0].find_all('tr')
 
     header = [col_name.getText().replace('\n', '') for col_name in table_rows[0].find_all("th")][1:]
+    header[-1] = 'Home teams'
 
     data = [[val.getText()for val in row.find_all("td")] for row in table_rows[1:]]
 
@@ -23,46 +24,49 @@ def extract_data_from_wiki_page(URL):
     print('Successfully extracted stadiums data')
 
 
-def clean_text(text):
-        
-    import re
-    
-    # replace newline characters with an empty string
-    if text:
-        text = text.replace('\n', '')
-    
-    # replace the '♦' character with an empty string
-    if text:
-        text = text.replace('♦', '')
-    
-    # remove leading and trailing whitespace
-    if text:
-        text = re.sub(r'^\s+|\s+$', '', text)
-    
-    return text
-
-
-def clean_integer(string):
-        
-    import re
-
-    string = re.sub(r'\[.*?\]', '', string)
-        
-    if string:
-        
-        string = string.replace(',', '') 
-
-    return string
-
-
 def transform_data(data_path):
 
     from pyspark.sql import SparkSession
     from pyspark.sql.functions import udf, col
     from pyspark.sql.types import StringType
+    import glob
+    import os
+
+    spark = SparkSession.builder.appName('stads').config("spark.executor.memory", "2g").config("spark.driver.memory", "2g").getOrCreate()
+    
+    output_dir = "output"
+
+    def clean_text(text):
+        
+	    import re
+	    
+	    # replace newline characters with an empty string
+	    if text:
+	    	text = text.replace('\n', '')
+	    
+	    # replace the '♦' character with an empty string
+	    if text:
+	    	text = text.replace('♦', '')
+	    
+	    # remove leading and trailing whitespace
+	    if text:
+	    	text = re.sub(r'^\s+|\s+$', '', text)
+	    
+	    return text
 
 
-    spark = SparkSession.builder.appName('stads').getOrCreate()
+    def clean_integer(string):
+        
+    	import re
+
+    	string = re.sub(r'\[.*?\]', '', string)
+        
+    	if string:
+        
+        	string = string.replace(',', '') 
+
+    	return string
+
 
     df = spark.read.csv(data_path, inferSchema= True, header= True, multiLine= True)
 
@@ -89,9 +93,29 @@ def transform_data(data_path):
     
     df = df.withColumn("Seating capacity", col("Seating capacity").cast('integer'))
 
-    df.write.csv('output', header= True)
+    df.write.csv(output_dir, header= True, mode= 'overwrite')
+    
+    spark.stop()
 
     print('Successfully transformed and exported stadiums data')
+
+    csv_files = glob.glob('output/*.csv')
+
+    # Ensure there's exactly one CSV file
+    
+    print(csv_files)
+    
+    if len(csv_files) == 1:
+
+        temp_csv_path = csv_files[0]
+     
+        # Rename the file using os.rename
+        os.rename(temp_csv_path, 'output/transformed_data.csv')
+
+        print('output succefully renamed')
+
+    else:
+        print('found more or less than 1 file')
 
 
 def load_into_Bq(project_id, dataset_id, table_id, data_path):
@@ -103,10 +127,6 @@ def load_into_Bq(project_id, dataset_id, table_id, data_path):
 
     # construct the reference to the table
     table_ref = client.dataset(dataset_id).table(table_id)
-
-    # write the DataFrame to a temporary CSV file
-    #csv_file_path = '/home/marwen/Applications/experiments/stadiums_data_pipeline/output/stadiums_transformed.csv' 
-    #df.to_csv(csv_file_path, index= False)
 
     # load the data from the CSV file into the BigQuery table
     job_config = bigquery.LoadJobConfig()
@@ -123,6 +143,5 @@ def load_into_Bq(project_id, dataset_id, table_id, data_path):
     job.result()
 
     print(f'Loaded {job.output_rows} rows into {dataset_id}.{table_id}')
-
 
 
