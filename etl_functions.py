@@ -19,7 +19,13 @@ def extract_data_from_wiki_page(URL):
 
     data = [[val.getText()for val in row.find_all("td")] for row in table_rows[1:]]
 
-    pd.DataFrame(data= data, columns= header).to_csv('stads.csv', index= False)
+    df = pd.DataFrame(data= data, columns= header)
+
+    df['id'] = range(len(data))
+
+    df = df[['id'] + header]
+
+    df.to_csv('stads.csv', index= False)
 
     print('Successfully extracted stadiums data')
 
@@ -78,10 +84,10 @@ def transform_data(data_path):
 
     # apply transformations to the df
 
-    # for all columns except Images, clean text
+    # for all columns except Images and id, clean text
     for column in df.columns:
 
-        if column != 'Images':
+        if (column != 'Images') and (column != 'id'):
 
             df = df.withColumn(column, clean_text_udf(df[column]))
 
